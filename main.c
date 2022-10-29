@@ -17,21 +17,36 @@
 #define PLAYER_ONE 0
 #define PLAYER_TWO 1
 
-enum Game_State
+
+typedef enum 
 {
     G_STATE_START,
     G_STATE_MENU,
     G_STATE_PLAY,
     G_STATE_QUIT
-};
+} Game_State;
 
-enum Player_Method
+typedef enum
+{
+    G_OPTION_E_STATE,
+    G_OPTION_E_BLOCK
+} Game_Option;
+
+typedef enum
+{
+    OPTION_STATE_STAND,
+    OPTION_STATE_CROUCH,
+    OPTION_STATE_JUMP
+} Option_State;
+
+typedef enum 
 {
     P_METHOD_KEYBOARD,
-    P_METHOD_GAMEPAD
-};
+    P_METHOD_GAMEPAD,
+    P_METHOD_DUMMY
+} Player_Method;
 
-enum Player_Input
+typedef enum
 {
     P_INPUT_LEFT = 1,
     P_INPUT_UP = 2,
@@ -39,12 +54,12 @@ enum Player_Input
     P_INPUT_DOWN = 8,
     P_INPUT_PUNCH = 16,
     P_INPUT_KICK = 32
-};
+} Player_Input;
 
-enum Player_State
+typedef enum 
 {
     P_STATE_STAND,
-    P_STATE_DUCK,
+    P_STATE_CROUCH,
     P_STATE_JUMP,
     P_STATE_FALL,
     P_STATE_KNOCKDOWN,
@@ -62,27 +77,28 @@ enum Player_State
     P_STATE_KICK_LOW,
     P_STATE_HIT_KICK_LOW,
     P_STATE_HIT_KICK_HIGH
-};
+} Player_State;
 
-enum Player_Facing
+typedef enum 
 {
     P_FACE_LEFT,
     P_FACE_RIGHT
-};
+} Player_Facing;
 
-enum Player_Attack_State
+typedef enum 
 {
     P_ATTACK_STARTUP,
     P_ATTACK_ACTIVE,
     P_ATTACK_RECOVERY,
     P_ATTACK_HIT
-};
+} Player_Attack_State;
+
 
 typedef struct Player
 {
     SDL_Rect r, col, hbox_mid, hbox_high, hbox_low, a_hbox;
 
-    enum Player_Method input_method;
+    Player_Method input_method;
 
     unsigned char   input, last_input, 
                     corner:1, double_jump:1, block:1, 
@@ -101,7 +117,7 @@ typedef struct Player
 typedef struct Game
 {
     Player *players;
-    unsigned char state, game_freeze:1, quit:1;
+    unsigned char state, opt_select, opt_state, game_freeze:1, quit:1;
     int g_hit_timer;
 } Game;
 
@@ -109,6 +125,11 @@ typedef struct Game
 void g_init(Game *g)
 {
     g->players = NULL;
+    g->opt_select = G_OPTION_E_STATE;
+    g->opt_state = OPTION_STATE_STAND;
+    g->game_freeze = 0;
+    g->quit = 0;
+    g->g_hit_timer = 0;
     g->state = G_STATE_START;
 }
 
@@ -195,6 +216,28 @@ void queue_remove(char *queue, char val)
             break;
         }
     }
+}
+
+void g_render_option_state(SDL_Renderer *r, FC_Font *f, SDL_Rect q, int state)
+{
+    switch (state)
+    {
+        case OPTION_STATE_STAND:
+            FC_Draw(f, r, q.w - 20, q.y + 60, "Stand");
+            break;
+        case OPTION_STATE_CROUCH:
+            FC_Draw(f, r, q.w - 20, q.y + 60, "Crouch");
+            break;
+        case OPTION_STATE_JUMP:
+            FC_Draw(f, r, q.w - 20, q.y + 60, "Jump");
+            break;
+    }
+}
+
+void g_render_option_block(SDL_Renderer *r, FC_Font *f, SDL_Rect q, int block)
+{
+    if (block) FC_Draw(f, r, q.w - 20, q.y + 80, "Block");
+    else FC_Draw(f, r, q.w - 20, q.y + 80, "Don't Block");
 }
 
 void p_render(SDL_Renderer *r, Player p)
@@ -390,7 +433,7 @@ void p_update_state_stand(Player *p, float delta)
     {
         p->r.h = 40;
         p->col.h = 40;
-        p->state = P_STATE_DUCK;
+        p->state = P_STATE_CROUCH;
         p->last_state = P_STATE_STAND;
         return;
     }
@@ -428,7 +471,7 @@ void p_update_state_duck(Player *p, float delta)
         p->r.h = 80;
         p->col.h = 80;
         p->state = P_STATE_STAND;
-        p->last_state = P_STATE_DUCK;
+        p->last_state = P_STATE_CROUCH;
     }
 }
 
@@ -550,8 +593,8 @@ void p_update_state_block_low(Player *p, int recovery, float delta)
         p->hit_timer = 0;
         p->hit = 0;
         p->block = 0;
-        p->state = P_STATE_DUCK;
-        p->last_state = P_STATE_DUCK;
+        p->state = P_STATE_CROUCH;
+        p->last_state = P_STATE_CROUCH;
     }
 }
 
@@ -827,7 +870,7 @@ void p_update_kick_low(Player *p, int opp_hit, int opp_corner, float delta)
                 {
                     p->r.h = 40;
                     p->col.h = 40;
-                    p->state = P_STATE_DUCK;
+                    p->state = P_STATE_CROUCH;
                 }
                 else
                 {
@@ -846,7 +889,7 @@ void p_update_kick_low(Player *p, int opp_hit, int opp_corner, float delta)
                 {
                     p->r.h = 40;
                     p->col.h = 40;
-                    p->state = P_STATE_DUCK;
+                    p->state = P_STATE_CROUCH;
                 }
                 else
                 {
@@ -882,7 +925,7 @@ void p_update(Player *p, Player *opp, float delta)
         case P_STATE_STAND:
             p_update_state_stand(p, delta);
             break;
-        case P_STATE_DUCK:
+        case P_STATE_CROUCH:
             p_update_state_duck(p, delta);
             break;
         case P_STATE_JUMP:
@@ -1021,7 +1064,7 @@ void p_update(Player *p, Player *opp, float delta)
                                 p->yvel = -1;
                                 p->state = P_STATE_KNOCKDOWN;
                             }
-                            else if (p->state == P_STATE_DUCK)
+                            else if (p->state == P_STATE_CROUCH)
                             {
                                 p->state = P_STATE_HIT_KICK_LOW;
                             }
@@ -1052,7 +1095,7 @@ void p_update(Player *p, Player *opp, float delta)
                                 p->yvel = -1;
                                 p->state = P_STATE_KNOCKDOWN;
                             }
-                            else if (p->state == P_STATE_DUCK)
+                            else if (p->state == P_STATE_CROUCH)
                             {
                                 p->state = P_STATE_HIT_KICK_LOW;
                             }
@@ -1086,7 +1129,7 @@ void p_update(Player *p, Player *opp, float delta)
     p->r.x = (int)p->x;
     p->col.x = p->r.x + (p->r.w >> 1);
     
-    if (p->state == P_STATE_DUCK 
+    if (p->state == P_STATE_CROUCH 
     || p->state == P_STATE_KICK_LOW)
     {
         p->r.y = (int)p->y + 40;
@@ -1207,7 +1250,7 @@ void p_key_down(Player *p, SDL_Event e)
                         //p->attack_startup = SDL_GetTicks64();
                     }
                     break;
-                case P_STATE_DUCK:
+                case P_STATE_CROUCH:
                     if (!p->attack)
                     {
                         p_attack_reset(p);
@@ -1271,7 +1314,7 @@ void p_pad_button_up(Player *p, SDL_Event e)
     }
 }
 
-void p_input(Player *p, SDL_Event e, int pnr)
+void p_input(Player *p, SDL_Event e, int opt_state)
 {
     if (p->input_method == P_METHOD_KEYBOARD)
     {
@@ -1300,6 +1343,21 @@ void p_input(Player *p, SDL_Event e, int pnr)
                 break;
             case SDL_JOYBUTTONUP:
                 p_pad_button_up(p, e);
+                break;
+        }
+    }
+    else if (p->input_method == P_METHOD_DUMMY)
+    {
+        switch (opt_state)
+        {
+            case OPTION_STATE_STAND:
+                p->input = 0;
+                break;
+            case OPTION_STATE_CROUCH:
+                p->input = P_INPUT_DOWN;
+                break;
+            case OPTION_STATE_JUMP:
+                p->input = P_INPUT_UP;
                 break;
         }
     }
@@ -1391,6 +1449,8 @@ int main(int argc, char const *argv[])
     p_init(&p1, W_WIDTH >> 2);
     p_init(&p2, W_WIDTH - (W_WIDTH >> 2) - 40);
 
+    p2.input_method = P_METHOD_DUMMY;
+
     SDL_Event e;
     Uint64 last_timer = SDL_GetTicks64();
 
@@ -1408,6 +1468,7 @@ int main(int argc, char const *argv[])
         Uint64 start = SDL_GetPerformanceCounter();
 
         p1.last_input = p1.input;
+        p2.last_input = p2.input;
 
         while(SDL_PollEvent(&e))
         {
@@ -1418,26 +1479,67 @@ int main(int argc, char const *argv[])
             }
             else if (e.type == SDL_KEYDOWN && !e.key.repeat)
             {
-                if (e.key.keysym.sym == SDLK_ESCAPE)
+                switch (g.state)
                 {
-                    if (g.state == G_STATE_MENU)
-                        g.state = G_STATE_PLAY;
-                    else if (g.state == G_STATE_PLAY)
-                        g.state = G_STATE_MENU;
-                }
-                else if (e.key.keysym.sym == SDLK_RETURN)
-                {
-                    p_reset_pos(&p1, W_WIDTH >> 2);
-                    p_reset_pos(&p2, W_WIDTH - (W_WIDTH >> 2) - p2.r.w);
-                }
-                else if (e.key.keysym.sym == SDLK_BACKSPACE)
-                {
-                    // switch p2 block on/off
-                    p2.block = !p2.block;
+                    case G_STATE_MENU:
+                        if (e.key.keysym.sym == SDLK_KP_8)
+                        {
+                            if (--g.opt_select == 255) 
+                                g.opt_select = G_OPTION_E_STATE;
+                        }
+                        else if (e.key.keysym.sym == SDLK_KP_2)
+                        {
+                            if (++g.opt_select > 1) 
+                                g.opt_select = G_OPTION_E_BLOCK;
+                        }
+                        else if (e.key.keysym.sym == SDLK_LEFT)
+                        {
+                            switch (g.opt_select)
+                            {
+                                case G_OPTION_E_STATE:
+                                    if (--g.opt_state == 255)
+                                    {
+                                        g.opt_state = OPTION_STATE_JUMP;
+                                    }
+                                    break;
+                                case G_OPTION_E_BLOCK:
+                                    p2.block = !p2.block;
+                                    break;
+                            }
+                        }
+                        else if (e.key.keysym.sym == SDLK_RIGHT)
+                        {
+                            switch (g.opt_select)
+                            {
+                                case G_OPTION_E_STATE:
+                                    if (++g.opt_state > 2) 
+                                        g.opt_state = OPTION_STATE_STAND;
+                                    break;
+                                case G_OPTION_E_BLOCK:
+                                    p2.block = !p2.block;
+                                    break;
+                            }
+                        }
+                        else if (e.key.keysym.sym == SDLK_ESCAPE)
+                        {
+                            g.state = G_STATE_PLAY;
+                        }
+                        break;
+                    case G_STATE_PLAY:
+                        if (e.key.keysym.sym == SDLK_ESCAPE)
+                        {
+                            g.state = G_STATE_MENU;
+                        }
+                        else if (e.key.keysym.sym == SDLK_RETURN)
+                        {
+                            p_reset_pos(&p1, W_WIDTH >> 2);
+                            p_reset_pos(&p2, W_WIDTH - (W_WIDTH >> 2) - p2.r.w);
+                        }
+                        break;
                 }
             }
-            p_input(&p1, e, PLAYER_ONE);
-            //p_input(&p, e, PLAYER_TWO);
+            p_input(&p1, e, g.opt_state);
+            p_input(&p2, e, g.opt_state);
         }
         
         Uint64 timer = SDL_GetTicks64();
@@ -1483,7 +1585,23 @@ int main(int argc, char const *argv[])
                 SDL_RenderFillRect(r, &q);
                 SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
                 SDL_RenderDrawRect(r, &q);
-                FC_Draw(font, r, q.x + 20, q.y + 20, "Testing");
+
+                FC_Draw(font, r, q.x + 20, q.y + 20, "OPTIONS");
+                FC_Draw(font, r, q.x + 20, q.y + 60, "Enemy State");
+                FC_Draw(font, r, q.x + 20, q.y + 80, "Enemy Block");
+
+                switch (g.opt_select)
+                {
+                    case G_OPTION_E_STATE:
+                        FC_Draw(font, r, q.x + 10, q.y + 60, ">");
+                        break;
+                    case G_OPTION_E_BLOCK:
+                        FC_Draw(font, r, q.x + 10, q.y + 80, ">");
+                        break;
+                }
+
+                g_render_option_state(r, font, q, g.opt_state);
+                g_render_option_block(r, font, q, p2.block);
                 break;
             case G_STATE_PLAY:
                 break;
