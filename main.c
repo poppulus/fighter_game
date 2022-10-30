@@ -17,6 +17,7 @@
 #define PLAYER_ONE 0
 #define PLAYER_TWO 1
 
+#define OPTIONS_COUNT 5
 
 typedef enum 
 {
@@ -29,7 +30,10 @@ typedef enum
 typedef enum
 {
     G_OPTION_E_STATE,
-    G_OPTION_E_BLOCK
+    G_OPTION_E_BLOCK,
+    G_OPTION_P_KICK_START,
+    G_OPTION_P_KICK_ACTIVE,
+    G_OPTION_P_KICK_RECOVERY,
 } Game_Option;
 
 typedef enum
@@ -233,40 +237,50 @@ void g_render_option_state(SDL_Renderer *r, FC_Font *f, SDL_Rect q, int state)
             break;
     }
 }
-
 void g_render_option_block(SDL_Renderer *r, FC_Font *f, SDL_Rect q, int block)
 {
     if (block) FC_Draw(f, r, q.w - 20, q.y + 80, "Block");
     else FC_Draw(f, r, q.w - 20, q.y + 80, "Don't Block");
 }
+void g_render_option_kick_startup(SDL_Renderer *r, FC_Font *f, SDL_Rect q)
+{
+
+}
+void g_render_option_kick_attack(SDL_Renderer *r, FC_Font *f, SDL_Rect q)
+{
+
+}
+void g_render_option_kick_recovery(SDL_Renderer *r, FC_Font *f, SDL_Rect q)
+{
+
+}
 
 void p_render(SDL_Renderer *r, Player p)
 {
     // draw player 
+    if (p.facing == P_FACE_RIGHT) 
+        SDL_SetRenderDrawColor(r, 255, 0, 0, 255);
+    else
+        SDL_SetRenderDrawColor(r, 0, 0, 255, 255);
+
+    SDL_RenderFillRect(r, &p.r);
+
     if (p.hit)
     {
         SDL_SetRenderDrawColor(r, 255, 255, 0, 255);
+        SDL_RenderDrawRect(r, &p.r);
     }
-    else 
-    {
-        if (p.facing == P_FACE_RIGHT) 
-            SDL_SetRenderDrawColor(r, 255, 0, 0, 255);
-        else
-            SDL_SetRenderDrawColor(r, 0, 0, 255, 255);
-    }
-
-    SDL_RenderFillRect(r, &p.r);
 
     // draw hitboxes
     SDL_SetRenderDrawColor(r, 0, 255, 0, 128);
     SDL_RenderFillRect(r, &p.col);
 
-    SDL_SetRenderDrawColor(r, 0, 0, 255, 255);
+    SDL_SetRenderDrawColor(r, 255, 255, 0, 255);
     SDL_RenderDrawRect(r, &p.hbox_high);
     SDL_RenderDrawRect(r, &p.hbox_mid);
     SDL_RenderDrawRect(r, &p.hbox_low);
 
-    SDL_SetRenderDrawColor(r, 0, 0, 255, 128);
+    SDL_SetRenderDrawColor(r, 255, 255, 0, 128);
     SDL_RenderFillRect(r, &p.hbox_high);
     SDL_RenderFillRect(r, &p.hbox_mid);
     SDL_RenderFillRect(r, &p.hbox_low);
@@ -356,13 +370,13 @@ void p_init(Player *p, int xpos)
     //p->col.x = p->r.x + (p->r.w >> 1);
     //p->col.y = p->r.y;
     p->a_hbox.w = 60;
-    p->a_hbox.h = 30;
-    p->hbox_high.w = 40;
-    p->hbox_high.h = 25;
-    p->hbox_mid.w = 40;
-    p->hbox_mid.h = 25;
-    p->hbox_low.w = 40;
-    p->hbox_low.h = 25;
+    p->a_hbox.h = 20;
+    p->hbox_high.w = 20;
+    p->hbox_high.h = 20;
+    p->hbox_mid.w = 20;
+    p->hbox_mid.h = 20;
+    p->hbox_low.w = 20;
+    p->hbox_low.h = 20;
     //p->hitbox.x = p->r.x;
     //p->hitbox.y = p->r.y;
     p->facing = 0;
@@ -431,8 +445,8 @@ void p_update_state_stand(Player *p, float delta)
 {
     if (p->input & P_INPUT_DOWN)
     {
-        p->r.h = 40;
-        p->col.h = 40;
+        p->r.h = 60;
+        p->col.h = 60;
         p->state = P_STATE_CROUCH;
         p->last_state = P_STATE_STAND;
         return;
@@ -743,7 +757,6 @@ void p_update_kick(Player *p, int opp_corner, float delta)
     switch (p->attack_state)
     {
         case P_ATTACK_STARTUP:
-            printf("kick startup\n");
             if (p->attack_timer == 6)
             {
                 p->attack_timer = 0;
@@ -751,13 +764,10 @@ void p_update_kick(Player *p, int opp_corner, float delta)
             }
             break;
         case P_ATTACK_ACTIVE:
-            printf("kick active\n");
             if (p->move_hit)
             {
-                printf("kick first hit\n");
                 if (opp_corner) 
                 {
-                    printf("kick corner\n");
                     p->x += p->facing ? -12 : 12;
                 }
                 p->attack_timer = 0;
@@ -772,7 +782,6 @@ void p_update_kick(Player *p, int opp_corner, float delta)
             }
             break;
         case P_ATTACK_RECOVERY:
-            printf("kick recovery\n");
             if (p->attack_timer == 12)
             {
                 p_attack_reset(p);
@@ -780,7 +789,6 @@ void p_update_kick(Player *p, int opp_corner, float delta)
             }
             break;
         case P_ATTACK_HIT:
-            printf("kick hit\n");
             if (p->attack_timer == 24)
             {
                 p->move_hit = 0;
@@ -791,15 +799,11 @@ void p_update_kick(Player *p, int opp_corner, float delta)
     }
 
     if (p->facing == P_FACE_RIGHT)
-    {
         p->a_hbox.x = p->r.x + (p->r.w >> 1);
-        p->a_hbox.y = p->r.y + (p->r.h >> 1) - (p->a_hbox.h >> 1);
-    }
     else
-    {
         p->a_hbox.x = p->r.x + (p->r.w >> 1) - p->a_hbox.w;
-        p->a_hbox.y = p->r.y + (p->r.h >> 1) - (p->a_hbox.h >> 1);
-    }
+
+    p->a_hbox.y = p->r.y + (p->r.h >> 1) - (p->a_hbox.h >> 1);
 }
 
 void p_update_hit_kick(Player *p, float delta)
@@ -868,8 +872,8 @@ void p_update_kick_low(Player *p, int opp_hit, int opp_corner, float delta)
                 p_attack_reset(p);
                 if (p->input & P_INPUT_DOWN)
                 {
-                    p->r.h = 40;
-                    p->col.h = 40;
+                    p->r.h = 60;
+                    p->col.h = 60;
                     p->state = P_STATE_CROUCH;
                 }
                 else
@@ -887,8 +891,8 @@ void p_update_kick_low(Player *p, int opp_hit, int opp_corner, float delta)
                 p_attack_reset(p);
                 if (p->input & P_INPUT_DOWN)
                 {
-                    p->r.h = 40;
-                    p->col.h = 40;
+                    p->r.h = 60;
+                    p->col.h = 60;
                     p->state = P_STATE_CROUCH;
                 }
                 else
@@ -902,15 +906,11 @@ void p_update_kick_low(Player *p, int opp_hit, int opp_corner, float delta)
     }
 
     if (p->facing == P_FACE_RIGHT)
-    {
         p->a_hbox.x = p->r.x + (p->r.w >> 1);
-    }
     else
-    {
         p->a_hbox.x = p->r.x + (p->r.w >> 1) - p->a_hbox.w;
-    }
 
-    p->a_hbox.y = p->r.y;
+    p->a_hbox.y = p->r.y + p->r.h - p->a_hbox.h;
 }
 
 void p_update_hit_kick_low(Player *p, float delta)
@@ -1022,14 +1022,10 @@ void p_update(Player *p, Player *opp, float delta)
         {
             if (!p->hit)
             {
+                unsigned char hit = 0;
                 if (p_coll(p->hbox_high, opp->a_hbox))
                 {
-                    opp->move_hit = 1;
-                    p->hit = 1;
-                    p->xdir = opp->facing ? 1 : -1;
-                    p_attack_reset(p);
-                    p_dash_cancel(p);
-                    p_freeze_reset(p);
+                    hit = 1;
                     switch (opp->state)
                     {
                         case P_STATE_PUNCH:
@@ -1042,12 +1038,20 @@ void p_update(Player *p, Player *opp, float delta)
                 }
                 else if (p_coll(p->hbox_mid, opp->a_hbox))
                 {
-                    opp->move_hit = 1;
-                    p->hit = 1;
-                    p->xdir = opp->facing ? 1 : -1;
-                    p_attack_reset(p);
-                    p_dash_cancel(p);
-                    p_freeze_reset(p);
+                    hit = 1;
+                    switch (opp->state)
+                    {
+                        case P_STATE_PUNCH:
+                            p->state = P_STATE_HIT_PUNCH;
+                            break;
+                        case P_STATE_KICK:
+                            p->state = P_STATE_HIT_KICK;
+                            break;
+                    }
+                }
+                else if (p_coll(p->hbox_low, opp->a_hbox))
+                {
+                    hit = 1;
                     switch (opp->state)
                     {
                         case P_STATE_PUNCH:
@@ -1071,7 +1075,7 @@ void p_update(Player *p, Player *opp, float delta)
                             break;
                     }
                 }
-                else if (p_coll(p->hbox_low, opp->a_hbox))
+                if (hit)
                 {
                     opp->move_hit = 1;
                     p->hit = 1;
@@ -1079,28 +1083,6 @@ void p_update(Player *p, Player *opp, float delta)
                     p_attack_reset(p);
                     p_dash_cancel(p);
                     p_freeze_reset(p);
-                    switch (opp->state)
-                    {
-                        case P_STATE_PUNCH:
-                            p->state = P_STATE_HIT_PUNCH;
-                            break;
-                        case P_STATE_KICK:
-                            p->state = P_STATE_HIT_KICK;
-                            break;
-                        case P_STATE_KICK_LOW:
-                            if (p->state == P_STATE_STAND)
-                            {
-                                p->knockdown_begin = SDL_GetTicks64();
-                                p->r.h = 40;
-                                p->yvel = -1;
-                                p->state = P_STATE_KNOCKDOWN;
-                            }
-                            else if (p->state == P_STATE_CROUCH)
-                            {
-                                p->state = P_STATE_HIT_KICK_LOW;
-                            }
-                            break;
-                    }
                 }
             }
         }
@@ -1132,8 +1114,8 @@ void p_update(Player *p, Player *opp, float delta)
     if (p->state == P_STATE_CROUCH 
     || p->state == P_STATE_KICK_LOW)
     {
-        p->r.y = (int)p->y + 40;
-        p->col.y = p->y + 40;
+        p->r.y = (int)p->y + 20;
+        p->col.y = p->y + 20;
     }
     else
     {
@@ -1141,12 +1123,12 @@ void p_update(Player *p, Player *opp, float delta)
         p->col.y = p->r.y;
     }
 
-    p->hbox_high.x = p->r.x;
+    p->hbox_high.x = p->r.x + (p->r.w >> 1) - 10;
     p->hbox_high.y = p->r.y;
-    p->hbox_mid.x = p->r.x;
-    p->hbox_mid.y = p->r.y + 25;
-    p->hbox_low.x = p->r.x;
-    p->hbox_low.y = p->r.y + 50;
+    p->hbox_mid.x = p->r.x + (p->r.w >> 1) - 10;
+    p->hbox_mid.y = p->r.y + 30;
+    p->hbox_low.x = p->r.x + (p->r.w >> 1) - 10;
+    p->hbox_low.y = p->r.y + 60;
 
     p_side_adjust(p, opp->col);
 }
@@ -1255,8 +1237,8 @@ void p_key_down(Player *p, SDL_Event e)
                     {
                         p_attack_reset(p);
                         p->attack = 1;
-                        p->r.h = 40;
-                        p->col.h = 40;
+                        p->r.h = 60;
+                        p->col.h = 60;
                         p->state = P_STATE_KICK_LOW;
                         //p->attack_startup = SDL_GetTicks64();
                     }
@@ -1485,12 +1467,12 @@ int main(int argc, char const *argv[])
                         if (e.key.keysym.sym == SDLK_KP_8)
                         {
                             if (--g.opt_select == 255) 
-                                g.opt_select = G_OPTION_E_STATE;
+                                g.opt_select = G_OPTION_P_KICK_RECOVERY;
                         }
                         else if (e.key.keysym.sym == SDLK_KP_2)
                         {
-                            if (++g.opt_select > 1) 
-                                g.opt_select = G_OPTION_E_BLOCK;
+                            if (++g.opt_select > (OPTIONS_COUNT - 1)) 
+                                g.opt_select = G_OPTION_E_STATE;
                         }
                         else if (e.key.keysym.sym == SDLK_LEFT)
                         {
@@ -1505,6 +1487,12 @@ int main(int argc, char const *argv[])
                                 case G_OPTION_E_BLOCK:
                                     p2.block = !p2.block;
                                     break;
+                                case G_OPTION_P_KICK_START:
+                                    break;
+                                case G_OPTION_P_KICK_ACTIVE:
+                                    break;
+                                case G_OPTION_P_KICK_RECOVERY:
+                                    break;
                             }
                         }
                         else if (e.key.keysym.sym == SDLK_RIGHT)
@@ -1517,6 +1505,12 @@ int main(int argc, char const *argv[])
                                     break;
                                 case G_OPTION_E_BLOCK:
                                     p2.block = !p2.block;
+                                    break;
+                                case G_OPTION_P_KICK_START:
+                                    break;
+                                case G_OPTION_P_KICK_ACTIVE:
+                                    break;
+                                case G_OPTION_P_KICK_RECOVERY:
                                     break;
                             }
                         }
@@ -1564,11 +1558,6 @@ int main(int argc, char const *argv[])
             p_update(&p1, &p2, delta);
             p_update(&p2, &p1, delta);
         }
-        else 
-        {
-            printf("game freeze on hit\n");
-            printf("p1 mhit %d p2 mhit %d\n", p1.move_hit, p2.move_hit);
-        }
 
         last_timer = timer;
 
@@ -1587,21 +1576,40 @@ int main(int argc, char const *argv[])
                 SDL_RenderDrawRect(r, &q);
 
                 FC_Draw(font, r, q.x + 20, q.y + 20, "OPTIONS");
-                FC_Draw(font, r, q.x + 20, q.y + 60, "Enemy State");
-                FC_Draw(font, r, q.x + 20, q.y + 80, "Enemy Block");
+                FC_Draw(font, r, q.x + 20, q.y + 60, "Dummy State");
+                FC_Draw(font, r, q.x + 20, q.y + 80, "Dummy Block");
+                FC_Draw(font, r, q.x + 20, q.y + q.h - 80, "Kick Startup");
+                FC_Draw(font, r, q.x + 20, q.y + q.h - 60, "Kick Attack");
+                FC_Draw(font, r, q.x + 20, q.y + q.h - 40, "Kick Recovery");
+
+                int x = q.x + 10, y;
 
                 switch (g.opt_select)
                 {
                     case G_OPTION_E_STATE:
-                        FC_Draw(font, r, q.x + 10, q.y + 60, ">");
+                        y = q.y + 60;
                         break;
                     case G_OPTION_E_BLOCK:
-                        FC_Draw(font, r, q.x + 10, q.y + 80, ">");
+                        y = q.y + 80;
+                        break;
+                    case G_OPTION_P_KICK_START:
+                        y = q.y + q.h - 80;
+                        break;
+                    case G_OPTION_P_KICK_ACTIVE:
+                        y = q.y + q.h - 60;
+                        break;
+                    case G_OPTION_P_KICK_RECOVERY:
+                        y = q.y + q.h - 40;
                         break;
                 }
 
+                FC_Draw(font, r, x, y, ">");
+
                 g_render_option_state(r, font, q, g.opt_state);
                 g_render_option_block(r, font, q, p2.block);
+                g_render_option_kick_startup(r, font, q);
+                g_render_option_kick_attack(r, font, q);
+                g_render_option_kick_recovery(r, font, q);
                 break;
             case G_STATE_PLAY:
                 break;
