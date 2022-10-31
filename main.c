@@ -88,7 +88,15 @@ typedef enum
     P_FACE_LEFT,
     P_FACE_RIGHT
 } Player_Facing;
-
+/*
+typedef enum
+{
+    P_MOVE_PUNCH,
+    P_MOVE_PUNCH_LOW,
+    P_MOVE_KICK,
+    P_MOVE_KICK_LOW,
+} Player_Move;
+*/
 typedef enum 
 {
     P_ATTACK_STARTUP,
@@ -97,6 +105,16 @@ typedef enum
     P_ATTACK_HIT
 } Player_Attack_State;
 
+
+struct Player_Move
+{
+    int startup,
+        active,
+        recovery;
+};
+
+typedef struct Player_Move Move_Punch;
+typedef struct Player_Move Move_Kick;
 
 typedef struct Player
 {
@@ -120,14 +138,153 @@ typedef struct Player
 
 typedef struct Game
 {
+    Move_Kick move_kick;
+    Move_Punch move_punch;
     Player *players;
     unsigned char state, opt_select, opt_state, game_freeze:1, quit:1;
     int g_hit_timer;
 } Game;
 
 
+int find_frame_data(char *buf, const char *s)
+{
+    if (strcmp(buf, s) == 0) return 1;
+    return 0;
+}
+
+void read_from_file(Game *g)
+{
+    FILE *f;
+    char buf[64];
+    int c, i = 0, n = 0, *l = NULL;
+
+    memset(buf, 0, 64);
+
+    if (!(f = fopen("config.cfg", "a+"))) 
+    {
+        printf("could not open/append to file: %s\n", "config.cfg");
+        return;
+    }
+
+    while (!feof(f))
+    {
+        c = fgetc(f);
+
+        if (c != '\n')
+        {
+            buf[i] = c;
+            if (++i > 63) i = 0;
+        }
+        else
+        {
+            l = NULL;
+            n = 0;
+            i = 0;
+            memset(buf, 0, 64);
+            continue;
+        }
+
+        if (c == ' ')
+        {
+            if (n == 0)
+            {
+                if (find_frame_data(buf, "punch_startup_frames "))
+                    l = &g->move_punch.startup;
+
+                else if (find_frame_data(buf, "punch_active_frames "))
+                    l = &g->move_punch.active;
+
+                else if (find_frame_data(buf, "punch_recovery_frames "))
+                    l = &g->move_punch.recovery;
+
+                else if (find_frame_data(buf, "kick_startup_frames "))
+                    l = &g->move_kick.startup;
+
+                else if (find_frame_data(buf, "kick_active_frames "))
+                    l = &g->move_kick.active;
+
+                else if (find_frame_data(buf, "kick_recovery_frames "))
+                    l = &g->move_kick.recovery;
+            }
+        }
+        
+        if (c == '"')
+        {
+            if (l)
+            {
+                n++;
+                if (n == 2)
+                {
+                    int a = 0;
+                    for (int j = sizeof(buf) - 1; j >= 0; j--)
+                    {
+                        if (buf[j] == '"') a++;
+                        if (a == 2)
+                        {
+                            *l = atoi(&buf[j + 1]);
+                            break;
+                        }
+                    }
+                    l = NULL;
+                    n = 0;
+                    i = 0;
+                    memset(buf, 0, 64);
+                }
+            }
+        }
+    }
+
+    fclose(f);
+}
+
+void queue_put(char *queue, char val)
+{
+    for (int i = 7; i > 0; i--)
+        queue[i] = queue[i - 1];
+    
+    queue[0] = val;
+}
+
+void queue_remove(char *queue, char val)
+{
+    for (int i = 0; i < 8; i++)
+    {
+        if (queue[i] == val)
+        {
+            for (int j = i; j < 7; j++)
+                queue[j] = queue[j + 1];
+
+            break;
+        }
+    }
+}
+
 void g_init(Game *g)
 {
+    g->move_punch.startup = 0;
+    g->move_punch.active = 0;
+    g->move_punch.recovery = 0;
+
+    g->move_kick.startup = 0;
+    g->move_kick.active = 0;
+    g->move_kick.recovery = 0;
+
+    read_from_file(g);
+
+    printf(
+        "punch frame data: s %d a %d r %d\n", 
+        g->move_punch.startup,
+        g->move_punch.active,
+        g->move_punch.recovery
+    );
+
+    printf(
+        "kick frame data: s %d a %d r %d\n", 
+        g->move_kick.startup,
+        g->move_kick.active,
+        g->move_kick.recovery
+    );
+
     g->players = NULL;
     g->opt_select = G_OPTION_E_STATE;
     g->opt_state = OPTION_STATE_STAND;
@@ -160,65 +317,6 @@ void g_close_controllers(SDL_GameController **c, int n)
     {
         if (c[i] != NULL) 
             SDL_GameControllerClose(c[i]);
-    }
-}
-
-void read_from_file(Game *g)
-{
-    FILE *f;
-    char buf[32];
-    int c, i = 0;
-
-    if (!(f = fopen("edit.ini", "a+"))) 
-    {
-        printf("could not open/append to file: %s\n", "edit.ini");
-        return;
-    }
-
-    while (!feof(f))
-    {
-        c = fgetc(f);
-        if (c == '=')
-        {
-            if (strcmp(buf, "player_xvel"))
-            {
-                printf("setting: %s\n", buf);
-                while ((c = fgetc(f)) != '\n')
-                {
-                    buf[i] = c;
-                    i++;
-                }
-                int n = atoi(&buf[i]);
-                printf("setting value: %d\n", n);
-                break;
-            }
-        }
-        buf[i] = c;
-        i++;
-    }
-
-    fclose(f);
-}
-
-void queue_put(char *queue, char val)
-{
-    for (int i = 7; i > 0; i--)
-        queue[i] = queue[i - 1];
-    
-    queue[0] = val;
-}
-
-void queue_remove(char *queue, char val)
-{
-    for (int i = 0; i < 8; i++)
-    {
-        if (queue[i] == val)
-        {
-            for (int j = i; j < 7; j++)
-                queue[j] = queue[j + 1];
-
-            break;
-        }
     }
 }
 
