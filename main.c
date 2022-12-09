@@ -4,13 +4,15 @@
 #define W_HEIGHT    480
 #define FPS_CAP_MS  16.66666603F
 
-#define P_XVELOCITY         250
-#define P_XVELOCITY_BW      175
+#define P_XVEL              250
+#define P_XVEL_JUMP         200
+#define P_XVEL_BW           175
 #define P_XVEL_DOUBLE       500
-#define P_XVELOCITY_COL     125
+#define P_XVEL_COL          125
+#define P_XVEL_STEER        150
 #define P_DASHVEL           400
 #define P_DASHVEL_BW        300
-#define P_YVELOCITY         900
+#define P_YVEL              900
 #define P_JUMPVEL          -500
 #define P_JUMPVEL_D        -350
 #define P_KNOCKDOWN_YVEL    450
@@ -136,8 +138,8 @@ typedef struct Player
                     dash:1, freeze:1, attack:1, attack_air:1, hit:1, move_hit:1;
 
     char    state, last_state, attack_state, facing, xdir, dash_dir, i_queue[8];
-    int     freeze_timer, attack_timer, hit_timer;
-    float   x, y, xvel, yvel;
+    int     xvel, freeze_timer, attack_timer, hit_timer;
+    float   x, y, yvel;
 
     Uint64  dash_begin, dash_end, dash_counter, 
             freeze_begin, freeze_end,
@@ -534,7 +536,7 @@ void p_init(Player *p, Move_List *moves, int xpos)
     p->hbox_low.h = 20;
 
     p->xdir = 0;
-    p->xvel = P_XVELOCITY;
+    p->xvel = P_XVEL;
     p->yvel = 0;
 
     p->hit_timer = 0;
@@ -559,7 +561,7 @@ void p_reset_pos(Player *p, int xpos)
     p->attack_air = 0;
 
     p->xdir = 0;
-    p->xvel = P_XVELOCITY;
+    p->xvel = P_XVEL;
     p->yvel = 0;
 
     p->r.h = 80;
@@ -611,12 +613,6 @@ void p_update_state_stand(Player *p, float delta)
         p->last_state = P_STATE_STAND;
         return;
     }
-    else if (p->input & P_INPUT_UP)
-    {
-        p->yvel = P_JUMPVEL;
-        p->state = P_STATE_JUMP;
-        p->last_state = P_STATE_STAND;
-    }
 
     if (p->input & P_INPUT_LEFT) p->xdir = -1;
     else if (p->input & P_INPUT_RIGHT) p->xdir = 1;
@@ -625,16 +621,24 @@ void p_update_state_stand(Player *p, float delta)
     if (p->facing == P_FACE_RIGHT)
     {
         if (p->xdir < 0)
-            p->x += p->xdir * P_XVELOCITY_BW * delta;
+            p->x += p->xdir * P_XVEL_BW * delta;
         else if (p->xdir > 0)
-            p->x += p->xdir * P_XVELOCITY * delta;
+            p->x += p->xdir * P_XVEL * delta;
     }
     else
     {
         if (p->xdir < 0)
-            p->x += p->xdir * P_XVELOCITY * delta;
+            p->x += p->xdir * P_XVEL * delta;
         else if (p->xdir > 0)
-            p->x += p->xdir * P_XVELOCITY_BW * delta;
+            p->x += p->xdir * P_XVEL_BW * delta;
+    }
+
+    if (p->input & P_INPUT_UP)
+    {
+        p->xvel = P_XVEL_JUMP;
+        p->yvel = P_JUMPVEL;
+        p->state = P_STATE_JUMP;
+        p->last_state = P_STATE_STAND;
     }
 }
 
@@ -653,7 +657,7 @@ void p_update_state_jump(Player *p, float delta)
 {
     p->x += p->xdir * p->xvel * delta;
 
-    if ((p->yvel += P_YVELOCITY * delta) >= 0) 
+    if ((p->yvel += P_YVEL * delta) >= 0) 
     {
         p->state = P_STATE_FALL;
         p->last_state = P_STATE_JUMP;
@@ -665,14 +669,14 @@ void p_update_state_jump(Player *p, float delta)
 void p_update_state_fall(Player *p, float delta)
 {
     p->x += p->xdir * p->xvel * delta;
-    p->yvel += P_YVELOCITY * delta;
+    p->yvel += P_YVEL * delta;
     p->y += p->yvel * delta;
 
     if (p->y + p->r.h >= W_HEIGHT)
     {
         p->attack_air = 0;
         p->double_jump = 0;
-        p->xvel = P_XVELOCITY;
+        p->xvel = P_XVEL;
         p->yvel = 0;
         p->y = W_HEIGHT - p->r.h;
         p_dash_cancel(p);
@@ -696,6 +700,7 @@ void p_update_state_knockdown(Player *p, float delta)
     if ((SDL_GetTicks64() - p->knockdown_begin) >= 1000) 
     {
         p->hit = 0;
+        p->hit_timer = 0;
         p->knockdown_begin = 0;
         p->r.h = 80;
         p->col.h = 80;
@@ -740,18 +745,6 @@ void p_update_state_dash_g(Player *p, float delta)
 {
     p->x += p->xdir * P_DASHVEL * delta;
 
-    /*
-    if (p->input & P_INPUT_UP)
-    {
-        p_dash_cancel(p);
-        p->xvel = P_DASHVEL;
-        p->yvel = P_JUMPVEL;
-        p->state = P_STATE_JUMP;
-        p->last_state = P_STATE_STAND;
-        return;
-    }
-    */
-
     if ((p->facing == P_FACE_RIGHT && p->input & P_INPUT_LEFT) 
     || (p->facing == P_FACE_LEFT && p->input & P_INPUT_RIGHT))
     {
@@ -764,7 +757,7 @@ void p_update_state_dash_g(Player *p, float delta)
     if ((SDL_GetTicks64() - p->dash_begin) >= 250) 
     {
         p_dash_cancel(p);
-        p->xvel = P_XVELOCITY;
+        p->xvel = P_XVEL;
         p->state = P_STATE_STAND;
         p->last_state = P_STATE_STAND;
     }
@@ -774,22 +767,10 @@ void p_update_state_dash_g_bw(Player *p, float delta)
 {
     p->x += p->xdir * P_DASHVEL * delta;
 
-    /*
-    if (p->input & P_INPUT_UP)
-    {
-        p_dash_cancel(p);
-        p->xvel = P_DASHVEL;
-        p->yvel = P_JUMPVEL;
-        p->state = P_STATE_JUMP;
-        p->last_state = P_STATE_STAND;
-        return;
-    }
-    */
-
     if ((SDL_GetTicks64() - p->dash_begin) >= 150) 
     {
         p_dash_cancel(p);
-        p->xvel = P_XVELOCITY;
+        p->xvel = P_XVEL;
         p->state = P_STATE_STAND;
         p->last_state = P_STATE_STAND;
     }
@@ -810,20 +791,7 @@ void p_update_state_dash_a(Player *p, float delta)
 
     p->x += p->xdir * P_DASHVEL * delta;
 
-    /*
-    if (!p->double_jump && (p->input & P_INPUT_UP))
-    {
-        p_dash_cancel(p);
-        p->xvel = P_XVELOCITY;
-        p->yvel = P_JUMPVEL_D;
-        p->double_jump = 1;
-        p->state = P_STATE_JUMP;
-        p->last_state = P_STATE_FALL;
-        return;
-    }
-    */
-
-    if ((SDL_GetTicks64() - p->dash_begin) >= 200) 
+    if ((SDL_GetTicks64() - p->dash_begin) >= 150) 
     {
         p->yvel = 0;
         p->state = P_STATE_FALL;
@@ -845,19 +813,6 @@ void p_update_state_dash_a_bw(Player *p, float delta)
     }
 
     p->x += p->xdir * P_DASHVEL * delta;
-
-    /*
-    if (!p->double_jump && (p->input & P_INPUT_UP))
-    {
-        p_dash_cancel(p);
-        p->xvel = P_XVELOCITY;
-        p->yvel = P_JUMPVEL_D;
-        p->double_jump = 1;
-        p->state = P_STATE_JUMP;
-        p->last_state = P_STATE_FALL;
-        return;
-    }
-    */
     
     if ((SDL_GetTicks64() - p->dash_begin) >= 100) 
     {
@@ -936,9 +891,9 @@ void p_update_kick(Player *p, int opp_corner, float delta)
 
 void p_update_hit_kick(Player *p, float delta)
 {
-    p->x += p->xdir;
+    p->x += p->xdir * 80 * delta;
 
-    if ((++p->hit_timer) >= 20)
+    if (++p->hit_timer >= 20)
     {
         p->hit = 0;
         p->hit_timer = 0;
@@ -951,6 +906,7 @@ void p_update_hit_kick(Player *p, float delta)
             case P_STATE_DASH_G_BW:
             case P_STATE_HIT_KICK:
             case P_STATE_HIT_KICK_LOW:
+                p->yvel = 0;
                 p->state = P_STATE_STAND;
                 p->last_state = P_STATE_STAND;
                 break;
@@ -962,13 +918,6 @@ void p_update_hit_kick(Player *p, float delta)
                 p->state = P_STATE_FALL;
                 p->last_state = P_STATE_FALL;
                 break;
-        }
-
-        if (p->yvel)
-        {
-            p->yvel = 0;
-            p->state = P_STATE_FALL;
-            p->last_state = P_STATE_FALL;
         }
     }
 }
@@ -1151,7 +1100,7 @@ void p_update_kick_air(Player *p, int opp_hit, int opp_corner, float delta)
                     {
                         p->xdir = 1;
                     }
-                    p->xvel = P_XVELOCITY;
+                    p->xvel = P_XVEL_STEER;
                     p->yvel = P_JUMPVEL_D;
                     p->double_jump = 1;
                     p->state = P_STATE_JUMP;
@@ -1173,7 +1122,7 @@ void p_update_kick_air(Player *p, int opp_hit, int opp_corner, float delta)
     if (p->attack_state != P_ATTACK_HIT)
     {
         p->x += p->xdir * p->xvel * delta;
-        p->yvel += P_YVELOCITY * delta;
+        p->yvel += P_YVEL * delta;
         p->y += p->yvel * delta;
     }
 
@@ -1190,7 +1139,7 @@ void p_update_kick_air(Player *p, int opp_hit, int opp_corner, float delta)
         p_attack_reset(p);
         p->attack_air = 0;
         p->double_jump = 0;
-        p->xvel = P_XVELOCITY;
+        p->xvel = P_XVEL;
         p->yvel = 0;
         p->y = W_HEIGHT - p->r.h;
         p->last_state = P_STATE_FALL;
@@ -1272,24 +1221,22 @@ void p_update(Player *p, Player *opp, float delta)
     {
         if (opp->attack_state == P_ATTACK_ACTIVE)
         {
-            if (!p->hit)
+            if (!p->hit && !opp->move_hit)
             {
                 unsigned char hit = 0;
                 if (p_coll(p->hbox_high, opp->a_hbox))
                 {
-                    hit = 1;
                     switch (opp->state)
                     {
                         default: break;
                         case P_STATE_PUNCH:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_PUNCH;
                             break;
                         case P_STATE_KICK:
-                            p->xdir = opp->facing ? 1 : -1;
-                            p->state = P_STATE_HIT_KICK;
-                            break;
                         case P_STATE_KICK_AIR:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_KICK;
                             break;
@@ -1297,19 +1244,17 @@ void p_update(Player *p, Player *opp, float delta)
                 }
                 else if (p_coll(p->hbox_mid, opp->a_hbox))
                 {
-                    hit = 1;
                     switch (opp->state)
                     {
                         default: break;
                         case P_STATE_PUNCH:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_PUNCH;
                             break;
                         case P_STATE_KICK:
-                            p->xdir = opp->facing ? 1 : -1;
-                            p->state = P_STATE_HIT_KICK;
-                            break;
                         case P_STATE_KICK_AIR:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_KICK;
                             break;
@@ -1317,19 +1262,22 @@ void p_update(Player *p, Player *opp, float delta)
                 }
                 else if (p_coll(p->hbox_low, opp->a_hbox))
                 {
-                    hit = 1;
                     switch (opp->state)
                     {
                         default: break;
                         case P_STATE_PUNCH:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_PUNCH;
                             break;
                         case P_STATE_KICK:
+                        case P_STATE_KICK_AIR:
+                            hit = 1;
                             p->xdir = opp->facing ? 1 : -1;
                             p->state = P_STATE_HIT_KICK;
                             break;
                         case P_STATE_KICK_LOW:
+                            hit = 1;
                             if (p->state == P_STATE_STAND)
                             {
                                 p->knockdown_begin = SDL_GetTicks64();
@@ -1343,10 +1291,6 @@ void p_update(Player *p, Player *opp, float delta)
                                 p->xdir = opp->facing ? 1 : -1;
                                 p->state = P_STATE_HIT_KICK_LOW;
                             }
-                            break;
-                        case P_STATE_KICK_AIR:
-                            p->xdir = opp->facing ? 1 : -1;
-                            p->state = P_STATE_HIT_KICK;
                             break;
                     }
                 }
@@ -1362,21 +1306,37 @@ void p_update(Player *p, Player *opp, float delta)
         }
     }
 
+    // separate check for x and y collision (?)
+    if (opp->xdir)
+    {
+        float testx = opp->xdir * opp->xvel * delta;
+        if (p_coll(p->r, opp->r))
+        {
+            if (p->x + testx + p->r.w >= W_WIDTH)
+            {
+                opp->x = p->r.x - p->r.w;
+            }
+            else if (p->x + testx <= 0)
+            {
+                opp->x = p->r.x + p->r.w;
+            }
+            else 
+            {
+                p->x += testx;
+
+                if (opp->x > p->x)
+                    opp->x = p->x + p->r.w;
+                else if (opp->x < p->x)
+                    opp->x = p->x - p->r.w;
+            }
+        }
+    }
+
     if (p->x < 40 || p->x + p->r.w > W_WIDTH - 40)
     {
         p->corner = 1;
     }
     else p->corner = 0;
-
-    // separate check for x and y collision (?)
-
-    if (opp->xdir)
-    {
-        if (p_coll(p->r, opp->col))
-        {
-            p->x += opp->xdir * opp->xvel * delta;
-        }
-    }
 
     if (p->x <= 0) p->x = 0;
     else if (p->x + p->r.w >= W_WIDTH)
@@ -1425,13 +1385,13 @@ void p_key_down(Player *p, SDL_Event e)
                         if (p->input & P_INPUT_LEFT)
                         {
                             if (p->xdir == 1)
-                                p->xvel = P_XVELOCITY_BW;
+                                p->xvel = P_XVEL_BW;
                             p->xdir = -1;
                         }
                         else if (p->input & P_INPUT_RIGHT)
                         {
                             if (p->xdir == -1)
-                                p->xvel = P_XVELOCITY_BW;
+                                p->xvel = P_XVEL_BW;
                             p->xdir = 1;
                         }
                         else p->xdir = 0;
@@ -1459,32 +1419,53 @@ void p_key_down(Player *p, SDL_Event e)
                 switch (p->state)
                 {
                     default: break;
-                    case P_STATE_STAND:
                     case P_STATE_JUMP:
                     case P_STATE_FALL:
-                        if (p->dash_dir == -1)
+                        if (p->xdir > 0)
                         {
-                            if ((SDL_GetTicks64() - p->dash_counter) <= 200) 
+                            switch (p->xvel)
                             {
-                                p->dash_begin = SDL_GetTicks64();
-                                p->dash_counter = 0;
-                                p->dash = 1;
-                                p->xdir = -1;
-                                p->freeze_begin = SDL_GetTicks64();
-                                p->freeze = 1;
-                                if (p->facing == P_FACE_RIGHT)
-                                {
-                                    p->xvel = P_DASHVEL_BW;
-                                    p->state = !p->state ? P_STATE_DASH_G_BW : P_STATE_DASH_A_BW;
-                                }
-                                else
-                                {
-                                    p->xvel = P_DASHVEL;
-                                    p->state = !p->state ? P_STATE_DASH_G : P_STATE_DASH_A;
-                                }
+                                default: break;
+                                case P_XVEL_JUMP:
+                                case P_XVEL_BW:
+                                    p->xvel = P_XVEL_COL;
+                                    break;
+                                case P_XVEL_COL:
+                                    p->xvel = P_XVEL_STEER;
+                                    break;
+                                case P_XVEL_STEER:
+                                    p->xvel = P_XVEL_COL;
+                                    break;
                             }
                         }
-                        p->dash_counter = SDL_GetTicks64();
+                    case P_STATE_STAND:
+                        if (!p->attack && !p->attack_air)
+                        {
+                            if (p->dash_dir == -1)
+                            {
+                                if ((SDL_GetTicks64() - p->dash_counter) <= 200) 
+                                {
+                                    p->dash_begin = SDL_GetTicks64();
+                                    p->dash_counter = 0;
+                                    p->dash = 1;
+                                    p->xdir = -1;
+                                    p->yvel = 0;
+                                    p->freeze_begin = SDL_GetTicks64();
+                                    p->freeze = 1;
+                                    if (p->facing == P_FACE_RIGHT)
+                                    {
+                                        p->xvel = P_DASHVEL_BW;
+                                        p->state = !p->state ? P_STATE_DASH_G_BW : P_STATE_DASH_A_BW;
+                                    }
+                                    else
+                                    {
+                                        p->xvel = P_DASHVEL;
+                                        p->state = !p->state ? P_STATE_DASH_G : P_STATE_DASH_A;
+                                    }
+                                }
+                            }
+                            p->dash_counter = SDL_GetTicks64();
+                        }
                         break;
                 }
             }
@@ -1502,32 +1483,53 @@ void p_key_down(Player *p, SDL_Event e)
                 switch (p->state)
                 {
                     default: break;
-                    case P_STATE_STAND:
                     case P_STATE_JUMP:
                     case P_STATE_FALL:
-                        if (p->dash_dir == 1)
+                        if (p->xdir < 0)
                         {
-                            if ((SDL_GetTicks64() - p->dash_counter) <= 200) 
+                            switch (p->xvel)
                             {
-                                p->dash_begin = SDL_GetTicks64();
-                                p->dash_counter = 0;
-                                p->dash = 1;
-                                p->xdir = 1;
-                                p->freeze_begin = SDL_GetTicks64();
-                                p->freeze = 1;
-                                if (p->facing == P_FACE_RIGHT)
-                                {
-                                    p->xvel = P_DASHVEL;
-                                    p->state = !p->state ? P_STATE_DASH_G : P_STATE_DASH_A;
-                                }
-                                else
-                                {
-                                    p->xvel = P_DASHVEL_BW;
-                                    p->state = !p->state ? P_STATE_DASH_G_BW : P_STATE_DASH_A_BW;
-                                }
+                                default: break;
+                                case P_XVEL_JUMP:
+                                case P_XVEL_BW:
+                                    p->xvel = P_XVEL_COL;
+                                    break;
+                                case P_XVEL_COL:
+                                    p->xvel = P_XVEL_STEER;
+                                    break;
+                                case P_XVEL_STEER:
+                                    p->xvel = P_XVEL_COL;
+                                    break;
                             }
                         }
-                        p->dash_counter = SDL_GetTicks64();
+                    case P_STATE_STAND:
+                        if (!p->attack && !p->attack_air)
+                        {
+                            if (p->dash_dir == 1)
+                            {
+                                if ((SDL_GetTicks64() - p->dash_counter) <= 200) 
+                                {
+                                    p->dash_begin = SDL_GetTicks64();
+                                    p->dash_counter = 0;
+                                    p->dash = 1;
+                                    p->xdir = 1;
+                                    p->yvel = 0;
+                                    p->freeze_begin = SDL_GetTicks64();
+                                    p->freeze = 1;
+                                    if (p->facing == P_FACE_RIGHT)
+                                    {
+                                        p->xvel = P_DASHVEL;
+                                        p->state = !p->state ? P_STATE_DASH_G : P_STATE_DASH_A;
+                                    }
+                                    else
+                                    {
+                                        p->xvel = P_DASHVEL_BW;
+                                        p->state = !p->state ? P_STATE_DASH_G_BW : P_STATE_DASH_A_BW;
+                                    }
+                                }
+                            }
+                            p->dash_counter = SDL_GetTicks64();
+                        }
                         break;
                 }
             }
@@ -1541,41 +1543,51 @@ void p_key_down(Player *p, SDL_Event e)
                 default: break;
                 case P_STATE_JUMP:
                 case P_STATE_FALL:
+                    if (!p->freeze)
+                    {
+                        if (!p->attack && !p->attack_air)
+                        {
+                            p_dash_cancel(p);
+                            p->attack = 1;
+                            p->attack_air = 1;
+                            p->last_state = p->state;
+                            p->state = P_STATE_KICK_AIR;
+                        }
+                    }
+                    break;
                 case P_STATE_DASH_A:
                 case P_STATE_DASH_A_BW:
-                    if (!p->attack && !p->attack_air)
+                    if (!p->freeze)
                     {
-                        p_dash_cancel(p);
-                        //p_attack_reset(p);
-                        p->attack = 1;
-                        p->attack_air = 1;
-                        p->last_state = p->state;
-                        p->state = P_STATE_KICK_AIR;
+                        if (!p->attack && !p->attack_air)
+                        {
+                            p_dash_cancel(p);
+                            p->attack = 1;
+                            p->attack_air = 1;
+                            p->last_state = p->state;
+                            p->state = P_STATE_KICK_AIR;
+                        }
                     }
                     break;
                 case P_STATE_STAND:
                 case P_STATE_DASH_G:
                 case P_STATE_DASH_G_BW:
-                    if (!p->attack)
+                    if (!p->freeze && !p->attack)
                     {
                         p_dash_cancel(p);
-                        //p_attack_reset(p);
                         p->attack = 1;
                         p->last_state = p->state;
                         p->state = P_STATE_KICK;
-                        //p->attack_startup = SDL_GetTicks64();
                     }
                     break;
                 case P_STATE_CROUCH:
-                    if (!p->attack)
+                    if (!p->freeze && !p->attack)
                     {
-                        //p_attack_reset(p);
                         p->attack = 1;
                         p->r.h = 60;
                         p->col.h = 60;
                         p->last_state = p->state;
                         p->state = P_STATE_KICK_LOW;
-                        //p->attack_startup = SDL_GetTicks64();
                     }
                     break;
             }
@@ -1767,7 +1779,7 @@ void g_handle_inputs(Game *g, SDL_Event e)
             }
             else if (e.key.keysym.sym == SDLK_RETURN)
             {
-                read_from_file(g);
+                //read_from_file(g);
                 p_reset_pos(
                     &g->players[PLAYER_ONE], 
                     W_WIDTH >> 2);
@@ -1784,14 +1796,13 @@ int main(int argc, char const *argv[])
     if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_EVENTS|SDL_INIT_JOYSTICK) < 0) 
     {
         printf("Could not init SDL: %s\n", SDL_GetError());
-        return 0;
+        goto quit;
     }
 
     if(!IMG_Init(IMG_INIT_PNG))
     {
         printf("SDL_image could not initialize! SDL_image Error: %s\n", IMG_GetError());
-        SDL_Quit();
-        return 0;
+        goto quit;
     }
 
     SDL_Window *w = SDL_CreateWindow(
@@ -1804,9 +1815,7 @@ int main(int argc, char const *argv[])
     if (w == NULL)
     {
         printf("Could not create SDL window, %s\n", SDL_GetError());
-        IMG_Quit();
-        SDL_Quit();
-        return 0;
+        goto quit;
     }
 
     SDL_Renderer *r = SDL_CreateRenderer(w, -1, SDL_RENDERER_ACCELERATED);
@@ -1814,20 +1823,13 @@ int main(int argc, char const *argv[])
     if (r == NULL)
     {
         printf("Could not create SDL renderer, %s\n", SDL_GetError());
-        SDL_DestroyWindow(w);
-        IMG_Quit();
-        SDL_Quit();
-        return 0;
+        goto quit;
     }
 
     if (SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND) < 0)
     {
         printf("Could not set render blend mode, %s\n", SDL_GetError());
-        SDL_DestroyRenderer(r);
-        SDL_DestroyWindow(w);
-        IMG_Quit();
-        SDL_Quit();
-        return 0;
+        goto quit;
     }
 
     FC_Font *font = FC_CreateFont();
@@ -1836,10 +1838,7 @@ int main(int argc, char const *argv[])
     if (font == NULL)
     {
         printf("Could not create font.\n");
-        SDL_DestroyRenderer(r);
-        SDL_DestroyWindow(w);
-        IMG_Quit();
-        SDL_Quit();
+        goto quit;
     }
 
     int num_joysticks;
@@ -2004,7 +2003,7 @@ int main(int argc, char const *argv[])
         float elapsed = (end - start) / (float)SDL_GetPerformanceFrequency() * 1000.0f;
         SDL_Delay(SDL_floor(FPS_CAP_MS - elapsed));
     }
-    
+
 quit:
     if (controllers != NULL)
     {
